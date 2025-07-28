@@ -1,41 +1,49 @@
 pipeline {
-  agent any
+    agent any
 
-  environment {
-    IMAGE_NAME = 'trinhxuanlinh/nodejs-app'
-  }
-
-  stages {
-    stage('Clone') {
-      steps {
-        checkout scm
-      }
+    environment {
+        IMAGE = 'trinhxuanlinh/nodejs-app:latest'
+        REGISTRY_CREDENTIALS = 'dockerhub-password'
     }
 
-    stage('Build Docker Image') {
-      steps {
-        script {
-          docker.build("${IMAGE_NAME}:latest")
+    stages {
+        stage('Clone Code') {
+            steps {
+                git url: 'https://github.com/txlinh/test-app.git', branch: 'main'
+            }
         }
-      }
-    }
 
-    stage('Push to DockerHub') {
-      steps {
-        withCredentials([string(credentialsId: 'dockerhub-password', variable: 'DOCKER_PASS')]) {
-          sh """
-            echo $DOCKER_PASS | docker login -u your-dockerhub-username --password-stdin
-            docker push ${IMAGE_NAME}:latest
-          """
+        stage('Build Docker Image') {
+            steps {
+                script {
+                    sh 'docker build -t $IMAGE .'
+                }
+            }
         }
-      }
-    }
 
-    stage('Deploy to Kubernetes') {
-      steps {
-        sh 'kubectl apply -f deployment.yml'
-        sh 'kubectl apply -f service.yml'
-      }
+        stage('Push Docker Image') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: "${REGISTRY_CREDENTIALS}", usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                    script {
+                        sh '''
+                            echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+                            docker push $IMAGE
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Deploy to Kubernetes') {
+            steps {
+                script {
+                    sh '''
+                        kubectl apply -f k8s/deployment.yaml
+                        kubectl apply -f k8s/service.yaml
+                        kubectl apply -f k8s/ingress.yaml
+                    '''
+                }
+            }
+        }
     }
-  }
 }
